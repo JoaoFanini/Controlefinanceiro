@@ -291,6 +291,10 @@ const ICONS = {
   check: "M20 6 9 17l-5-5",
   clock: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2",
   x: "M18 6 6 18M6 6l12 12",
+  logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
+  mail: "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6",
+  lock: "M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4",
+  user: "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z",
 };
 
 const Icon = ({ name, size = 18, color = "currentColor", sw = 2 }) => (
@@ -1449,8 +1453,8 @@ const ABAS = [
   { id: "dicas", label: "Dicas", icon: "bulb" },
 ];
 
-export default function App() {
-  const [salvo] = useState(carregarEstado);
+export default function App({ usuario, inicial, onChange, onSair, statusSync }) {
+  const [salvo] = useState(() => inicial || null);
   const [aba, setAba] = useState("geral");
   const [transacoes, setTransacoes] = useState(salvo?.transacoes ?? []);
   const [cartoes, setCartoes] = useState(salvo?.cartoes ?? []);
@@ -1462,13 +1466,10 @@ export default function App() {
   const [modoLancar, setModoLancar] = useState("receita");
   const [toast, setToast] = useState(null);
 
+  // persistência: entrega o estado para quem salva (banco do usuário logado)
   useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ transacoes, cartoes, compras, meta, habitos, checks: podarChecks(checks) }));
-    } catch {
-      /* storage indisponível */
-    }
-  }, [transacoes, cartoes, compras, meta, habitos, checks]);
+    onChange?.({ transacoes, cartoes, compras, meta, habitos, checks: podarChecks(checks) });
+  }, [transacoes, cartoes, compras, meta, habitos, checks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!toast) return;
@@ -1648,7 +1649,21 @@ export default function App() {
             <span className="muted" style={{ fontSize: 11.5 }}>Saldo de {labelYM(mesSel)}</span>
             <strong style={{ color: saldoMes >= 0 ? C.mint : C.red }}>{brl(saldoMes)}</strong>
           </div>
-          <button className="btn-link" style={{ fontSize: 12, color: C.dim }} onClick={resetar}>Apagar todos os dados</button>
+          {usuario && (
+            <div className="conta-box">
+              <div className="avatar">{(usuario.nome || usuario.email || "?").trim()[0].toUpperCase()}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="conta-nome">{usuario.nome || "Minha conta"}</div>
+                <div className="conta-email">{usuario.email}</div>
+              </div>
+              <button className="icon-btn" onClick={onSair} title="Sair" aria-label="Sair"><Icon name="logout" size={16} /></button>
+            </div>
+          )}
+          <div className="sync-line">
+            <span className={`sync-dot ${statusSync || "ok"}`} />
+            {statusSync === "salvando" ? "Salvando…" : statusSync === "erro" ? "Erro ao salvar — tentando de novo" : "Salvo na nuvem"}
+          </div>
+          <button className="btn-link" style={{ fontSize: 12, color: C.dim }} onClick={resetar}>Apagar todos os meus dados</button>
         </div>
       </aside>
 
@@ -1658,7 +1673,15 @@ export default function App() {
             <h1>{titulos[aba][0]}</h1>
             <p className="muted" style={{ fontSize: 14, marginTop: 2 }}>{titulos[aba][1]}</p>
           </div>
-          {mostraMes && <SeletorMes value={mesSel} onChange={setMesSel} />}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {mostraMes && <SeletorMes value={mesSel} onChange={setMesSel} />}
+            {usuario && (
+              <button className="conta-mobile" onClick={onSair} title={`Sair de ${usuario.email}`}>
+                <span className="avatar avatar-sm">{(usuario.nome || usuario.email || "?").trim()[0].toUpperCase()}</span>
+                <Icon name="logout" size={15} />
+              </button>
+            )}
+          </div>
         </header>
 
         {aba === "geral" && <VisaoGeral ctx={ctx} />}
@@ -1963,6 +1986,19 @@ const CSS = `
 }
 @keyframes subir { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
+/* conta */
+.conta-box { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: rgba(255,255,255,.03); border: 1px solid ${C.line}; }
+.avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 14px; flex-shrink: 0;
+  background: linear-gradient(135deg, #6ee7b7, #10b981); color: #022c22; }
+.avatar-sm { width: 26px; height: 26px; font-size: 12px; }
+.conta-nome { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conta-email { font-size: 11px; color: ${C.dim}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sync-line { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: ${C.dim}; padding: 0 4px; }
+.sync-dot { width: 7px; height: 7px; border-radius: 50%; background: ${C.mint}; box-shadow: 0 0 6px ${C.mint}; }
+.sync-dot.salvando { background: ${C.amber}; box-shadow: 0 0 6px ${C.amber}; }
+.sync-dot.erro { background: ${C.red}; box-shadow: 0 0 6px ${C.red}; }
+.conta-mobile { display: none; align-items: center; gap: 6px; border: 1px solid ${C.line}; background: rgba(255,255,255,.04); border-radius: 99px; padding: 4px 10px 4px 4px; color: ${C.muted} !important; }
+
 /* responsivo */
 @media (max-width: 1180px) {
   .grid-12 { grid-template-columns: 1fr; }
@@ -1976,6 +2012,7 @@ const CSS = `
 @media (max-width: 760px) {
   .sidebar { inset: auto 0 0 0; width: 100%; height: 70px; padding: 6px 4px; flex-direction: row; border-right: 0; border-top: 1px solid ${C.line}; background: rgba(3,12,9,.94); }
   .brand, .side-foot { display: none; }
+  .conta-mobile { display: inline-flex; }
   .nav { flex-direction: row; width: 100%; justify-content: space-around; }
   .nav-btn { flex-direction: column; gap: 3px; padding: 7px 6px; font-size: 10.5px; }
   .nav-btn.active { box-shadow: none; background: transparent; }
@@ -1996,3 +2033,5 @@ const CSS = `
   .toast { bottom: 86px; }
 }
 `;
+
+export { C, CSS, Icon, LogoF9, STORAGE_KEY, carregarEstado };
