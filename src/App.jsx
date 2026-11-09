@@ -530,26 +530,62 @@ function SeletorCategoria({ cats, value, onChange }) {
   );
 }
 
-/* Campo de dinheiro com máscara (estilo app de banco): digita 1089 → mostra 10,89.
-   Não depende do idioma do navegador, aceita colar "10,89" ou "1.234,56". Guarda CENTAVOS (inteiro). */
-function CampoValor({ centavos, onChange, placeholder = "0,00", pequeno = false, autoFocus = false }) {
-  const texto = centavos > 0
-    ? (centavos / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : "";
+/* Campo de dinheiro: digita do jeito natural — "10,89", "10.89", "1.234,56" ou "1234".
+   O teclado do celular abre com vírgula (inputMode="decimal"). Ao sair do campo, formata como "1.234,56".
+   Guarda CENTAVOS (inteiro), então não tem erro de arredondamento. */
+const fmtValor = (c) => (c > 0 ? (c / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "");
+
+function textoParaCentavos(txt) {
+  const t = String(txt || "").replace(/[^\d.,]/g, "");
+  if (!/\d/.test(t)) return 0;
+  let inteiro = t, dec = "";
+  if (t.includes(",")) {
+    const i = t.lastIndexOf(",");
+    inteiro = t.slice(0, i).replace(/[.,]/g, "");
+    dec = t.slice(i + 1).replace(/[.,]/g, "");
+  } else if (t.includes(".")) {
+    const i = t.lastIndexOf(".");
+    const depois = t.slice(i + 1);
+    const pontos = (t.match(/\./g) || []).length;
+    if (pontos === 1 && depois.length <= 2) { inteiro = t.slice(0, i); dec = depois; } // 10.89 → decimal
+    else inteiro = t.replace(/\./g, ""); // 1.234 ou 1.234.567 → milhar
+  }
+  dec = (dec + "00").slice(0, 2);
+  return (parseInt(inteiro.slice(0, 10) || "0", 10) * 100) + parseInt(dec, 10);
+}
+
+function limparDigitacao(txt) {
+  let t = String(txt).replace(/[^\d.,]/g, "");
+  const i = t.indexOf(",");
+  if (i >= 0) t = t.slice(0, i + 1) + t.slice(i + 1).replace(/[.,]/g, "").slice(0, 2); // 1 vírgula, até 2 casas
+  return t.slice(0, 16);
+}
+
+function CampoValor({ centavos, onChange, placeholder = "0,00", pequeno = false }) {
+  const [texto, setTexto] = useState(fmtValor(centavos));
+  const [foco, setFoco] = useState(false);
+  // quando o valor muda por fora (ex.: formulário limpo após lançar), atualiza o texto
+  useEffect(() => {
+    if (!foco) setTexto(fmtValor(centavos));
+    else if (textoParaCentavos(texto) !== centavos) setTexto(fmtValor(centavos));
+  }, [centavos, foco]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className={`valor-wrap ${pequeno ? "valor-sm" : ""}`}>
       <span className="valor-prefixo">R$</span>
       <input
         className="input valor-input"
         type="text"
-        inputMode="numeric"
+        inputMode="decimal"
         autoComplete="off"
-        autoFocus={autoFocus}
+        enterKeyHint="done"
         placeholder={placeholder}
         value={texto}
+        onFocus={() => setFoco(true)}
+        onBlur={() => setFoco(false)}
         onChange={(e) => {
-          const digitos = e.target.value.replace(/\D/g, "").replace(/^0+/, "").slice(0, 11);
-          onChange(digitos ? parseInt(digitos, 10) : 0);
+          const t = limparDigitacao(e.target.value);
+          setTexto(t);
+          onChange(textoParaCentavos(t));
         }}
       />
     </div>
