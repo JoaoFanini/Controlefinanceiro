@@ -530,6 +530,33 @@ function SeletorCategoria({ cats, value, onChange }) {
   );
 }
 
+/* Campo de dinheiro com máscara (estilo app de banco): digita 1089 → mostra 10,89.
+   Não depende do idioma do navegador, aceita colar "10,89" ou "1.234,56". Guarda CENTAVOS (inteiro). */
+function CampoValor({ centavos, onChange, placeholder = "0,00", pequeno = false, autoFocus = false }) {
+  const texto = centavos > 0
+    ? (centavos / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : "";
+  return (
+    <div className={`valor-wrap ${pequeno ? "valor-sm" : ""}`}>
+      <span className="valor-prefixo">R$</span>
+      <input
+        className="input valor-input"
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        autoFocus={autoFocus}
+        placeholder={placeholder}
+        value={texto}
+        onChange={(e) => {
+          const digitos = e.target.value.replace(/\D/g, "").replace(/^0+/, "").slice(0, 11);
+          onChange(digitos ? parseInt(digitos, 10) : 0);
+        }}
+      />
+    </div>
+  );
+}
+const paraCentavos = (reais) => Math.round((Number(reais) || 0) * 100);
+
 const Campo = ({ label, children, dica }) => (
   <label className="campo">
     <span className="campo-label">{label}</span>
@@ -669,7 +696,7 @@ function VisaoGeral({ ctx }) {
           <input type="range" min="0" max={maxSlider} step="50" value={Math.min(meta, maxSlider)} onChange={(e) => setMeta(Number(e.target.value))} className="range" />
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span className="muted" style={{ fontSize: 12 }}>Meta mensal:</span>
-            <input type="number" min="0" step="50" className="input input-sm" value={meta} onChange={(e) => setMeta(Math.max(0, Number(e.target.value) || 0))} />
+            <CampoValor pequeno centavos={paraCentavos(meta)} onChange={(c) => setMeta(c / 100)} />
           </div>
         </div>
       </div>
@@ -750,10 +777,10 @@ function LinhaTransacao({ t, onDelete, extra }) {
    ABA: LANÇAR
    ========================================================= */
 
-function FormVista({ modoInicial, onAdd }) {
+function FormVista({ modoInicial, sinal, onAdd }) {
   const [tipo, setTipo] = useState(modoInicial === "gasto" ? "gasto" : "receita");
   const [desc, setDesc] = useState("");
-  const [valor, setValor] = useState("");
+  const [valor, setValor] = useState(0); // centavos
   const [categoria, setCategoria] = useState(modoInicial === "gasto" ? "alimentacao" : "salario");
   const [data, setData] = useState(hojeISO());
   const [erro, setErro] = useState("");
@@ -763,7 +790,7 @@ function FormVista({ modoInicial, onAdd }) {
       setTipo(modoInicial);
       setCategoria(modoInicial === "gasto" ? "alimentacao" : "salario");
     }
-  }, [modoInicial]);
+  }, [modoInicial, sinal]);
 
   const trocarTipo = (t) => {
     setTipo(t);
@@ -772,12 +799,11 @@ function FormVista({ modoInicial, onAdd }) {
 
   const enviar = (e) => {
     e.preventDefault();
-    const v = Number(valor);
     if (!desc.trim()) return setErro("Informe uma descrição.");
-    if (!(v > 0)) return setErro("Informe um valor maior que zero.");
+    if (!(valor > 0)) return setErro("Informe um valor maior que zero.");
     if (!data) return setErro("Informe a data.");
-    onAdd({ id: uid(), tipo, desc: desc.trim(), valor: Math.round(v * 100) / 100, categoria, data });
-    setDesc(""); setValor(""); setErro("");
+    onAdd({ id: uid(), tipo, desc: desc.trim(), valor: valor / 100, categoria, data });
+    setDesc(""); setValor(0); setErro("");
   };
 
   return (
@@ -793,8 +819,8 @@ function FormVista({ modoInicial, onAdd }) {
           <input className="input" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={tipo === "receita" ? "Ex.: Salário de novembro" : "Ex.: Mercado do mês"} />
         </Campo>
         <div className="form-2">
-          <Campo label="Valor (R$)">
-            <input className="input" type="number" inputMode="decimal" step="0.01" min="0" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" />
+          <Campo label="Valor">
+            <CampoValor centavos={valor} onChange={setValor} />
           </Campo>
           <Campo label="Data">
             <input className="input" type="date" value={data} onChange={(e) => setData(e.target.value)} />
@@ -815,7 +841,7 @@ function FormVista({ modoInicial, onAdd }) {
 function FormCartao({ cartoes, onAdd, irCartoes, destacar }) {
   const [cardId, setCardId] = useState(cartoes[0]?.id || "");
   const [desc, setDesc] = useState("");
-  const [valor, setValor] = useState("");
+  const [valor, setValor] = useState(0); // centavos
   const [parcelas, setParcelas] = useState(1);
   const [categoria, setCategoria] = useState("compras");
   const [data, setData] = useState(hojeISO());
@@ -826,7 +852,7 @@ function FormCartao({ cartoes, onAdd, irCartoes, destacar }) {
   }, [cartoes, cardId]);
 
   const cartao = cartoes.find((c) => c.id === cardId);
-  const v = Number(valor);
+  const v = valor / 100;
   const preview = cartao && v > 0 && data ? gerarParcelas({ id: "prev", cardId, desc, valor: v, parcelas, categoria, data }, cartao) : [];
 
   const enviar = (e) => {
@@ -834,8 +860,9 @@ function FormCartao({ cartoes, onAdd, irCartoes, destacar }) {
     if (!cartao) return setErro("Cadastre um cartão primeiro.");
     if (!desc.trim()) return setErro("Informe uma descrição.");
     if (!(v > 0)) return setErro("Informe um valor maior que zero.");
-    onAdd({ id: uid(), cardId, desc: desc.trim(), valor: Math.round(v * 100) / 100, parcelas: Number(parcelas), categoria, data });
-    setDesc(""); setValor(""); setParcelas(1); setErro("");
+    if (!data) return setErro("Informe a data da compra.");
+    onAdd({ id: uid(), cardId, desc: desc.trim(), valor: v, parcelas: Number(parcelas), categoria, data });
+    setDesc(""); setValor(0); setParcelas(1); setErro("");
   };
 
   return (
@@ -861,8 +888,8 @@ function FormCartao({ cartoes, onAdd, irCartoes, destacar }) {
               <input className="input" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Ex.: Geladeira nova" />
             </Campo>
             <div className="form-3">
-              <Campo label="Valor total (R$)">
-                <input className="input" type="number" inputMode="decimal" step="0.01" min="0" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" />
+              <Campo label="Valor total">
+                <CampoValor centavos={valor} onChange={setValor} />
               </Campo>
               <Campo label="Parcelas">
                 <select className="input" value={parcelas} onChange={(e) => setParcelas(Number(e.target.value))}>
@@ -909,7 +936,7 @@ function FormCartao({ cartoes, onAdd, irCartoes, destacar }) {
 function Cartoes({ ctx }) {
   const { cartoes, addCartao, removerCartao, usadoCartao, parcelas, mesSel } = ctx;
   const [nome, setNome] = useState("");
-  const [limite, setLimite] = useState("");
+  const [limite, setLimite] = useState(0); // centavos
   const [fechamento, setFechamento] = useState(5);
   const [final, setFinal] = useState("");
   const [cor, setCor] = useState(CORES_CARTAO[0]);
@@ -918,9 +945,9 @@ function Cartoes({ ctx }) {
   const enviar = (e) => {
     e.preventDefault();
     if (!nome.trim()) return setErro("Dê um nome ao cartão.");
-    if (!(Number(limite) > 0)) return setErro("Informe o limite.");
-    addCartao({ id: uid(), nome: nome.trim(), limite: Number(limite), fechamento: Number(fechamento), final: final.replace(/\D/g, "").slice(-4), cor });
-    setNome(""); setLimite(""); setFinal(""); setErro("");
+    if (!(limite > 0)) return setErro("Informe o limite.");
+    addCartao({ id: uid(), nome: nome.trim(), limite: limite / 100, fechamento: Number(fechamento), final: final.replace(/\D/g, "").slice(-4), cor });
+    setNome(""); setLimite(0); setFinal(""); setErro("");
   };
 
   const meses12 = Array.from({ length: 12 }, (_, i) => addMonths(mesSel, i));
@@ -930,12 +957,12 @@ function Cartoes({ ctx }) {
       <form className="card" onSubmit={enviar} style={{ alignSelf: "start" }}>
         <h3>Novo cartão</h3>
         <div style={{ margin: "16px 0" }}>
-          <CartaoVisual card={{ nome: nome || "Meu cartão", limite: Number(limite) || 0, fechamento, final: final.slice(-4), cor }} usado={0} />
+          <CartaoVisual card={{ nome: nome || "Meu cartão", limite: limite / 100, fechamento, final: final.slice(-4), cor }} usado={0} />
         </div>
         <div className="form-grid">
           <Campo label="Nome"><input className="input" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Nubank" /></Campo>
           <div className="form-2">
-            <Campo label="Limite (R$)"><input className="input" type="number" min="0" step="50" value={limite} onChange={(e) => setLimite(e.target.value)} placeholder="3000" /></Campo>
+            <Campo label="Limite"><CampoValor centavos={limite} onChange={setLimite} placeholder="3.000,00" /></Campo>
             <Campo label="Final (4 dígitos)"><input className="input" value={final} maxLength={4} inputMode="numeric" onChange={(e) => setFinal(e.target.value.replace(/\D/g, ""))} placeholder="1234" /></Campo>
           </div>
           <Campo label="Dia de fechamento da fatura" dica="Compras a partir desse dia caem na fatura do mês seguinte.">
@@ -1464,6 +1491,7 @@ export default function App({ usuario, inicial, onChange, onSair, statusSync }) 
   const [checks, setChecks] = useState(salvo?.checks ?? {});
   const [mesSel, setMesSel] = useState(mesAtual());
   const [modoLancar, setModoLancar] = useState("receita");
+  const [sinalLancar, setSinalLancar] = useState(0);
   const [toast, setToast] = useState(null);
 
   // persistência: entrega o estado para quem salva (banco do usuário logado)
@@ -1540,12 +1568,12 @@ export default function App({ usuario, inicial, onChange, onSair, statusSync }) 
   /* ações */
   const irPara = (id, modo) => {
     setAba(id);
-    if (modo) setModoLancar(modo);
+    if (modo) { setModoLancar(modo); setSinalLancar((n) => n + 1); }
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const addTransacao = (t) => {
     setTransacoes((p) => [...p, t]);
-    setToast(`${t.tipo === "receita" ? "Receita" : "Gasto"} de ${brl(t.valor)} lançado ✓`);
+    setToast(t.tipo === "receita" ? `Receita de ${brl(t.valor)} lançada ✓` : `Gasto de ${brl(t.valor)} lançado ✓`);
   };
   const addCompra = (c) => {
     setCompras((p) => [...p, c]);
@@ -1687,7 +1715,7 @@ export default function App({ usuario, inicial, onChange, onSair, statusSync }) 
         {aba === "geral" && <VisaoGeral ctx={ctx} />}
         {aba === "lancar" && (
           <div className="grid-2">
-            <FormVista modoInicial={modoLancar} onAdd={addTransacao} />
+            <FormVista modoInicial={modoLancar} sinal={sinalLancar} onAdd={addTransacao} />
             <FormCartao cartoes={cartoes} onAdd={addCompra} irCartoes={() => irPara("cartoes")} destacar={modoLancar === "cartao"} />
           </div>
         )}
@@ -1732,7 +1760,7 @@ const CSS = `
 
 /* sidebar */
 .sidebar {
-  position: fixed; inset: 0 auto 0 0; width: 240px; z-index: 30;
+  position: fixed; inset: 0 auto 0 0; width: 240px; z-index: 30; overflow-y: auto;
   background: rgba(4,18,13,.72); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
   border-right: 1px solid ${C.line}; padding: 22px 14px; display: flex; flex-direction: column;
 }
@@ -1980,11 +2008,19 @@ const CSS = `
 /* toast */
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 70;
+  width: max-content; max-width: calc(100vw - 32px);
   background: rgba(6,18,13,.95); border: 1px solid rgba(110,231,183,.3); color: ${C.text}; padding: 12px 18px; border-radius: 14px;
   font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 8px; box-shadow: 0 12px 30px rgba(0,0,0,.5);
   animation: subir .25s ease-out;
 }
 @keyframes subir { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* campo de valor */
+.valor-wrap { position: relative; display: flex; align-items: center; }
+.valor-prefixo { position: absolute; left: 12px; font-size: 14px; font-weight: 600; color: ${C.dim}; pointer-events: none; }
+.valor-input { padding-left: 40px !important; font-variant-numeric: tabular-nums; font-weight: 600 !important; }
+.valor-sm { width: 150px; }
+.valor-sm .valor-input { padding-top: 7px; padding-bottom: 7px; }
 
 /* conta */
 .conta-box { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: rgba(255,255,255,.03); border: 1px solid ${C.line}; }
@@ -2013,6 +2049,9 @@ const CSS = `
   .sidebar { inset: auto 0 0 0; width: 100%; height: 70px; padding: 6px 4px; flex-direction: row; border-right: 0; border-top: 1px solid ${C.line}; background: rgba(3,12,9,.94); }
   .brand, .side-foot { display: none; }
   .conta-mobile { display: inline-flex; }
+  .sidebar { overflow: visible; }
+  .input, .valor-input, .mes-sel select { font-size: 16px !important; } /* evita o zoom automático do iPhone ao tocar no campo */
+  .topbar { align-items: flex-start; }
   .nav { flex-direction: row; width: 100%; justify-content: space-around; }
   .nav-btn { flex-direction: column; gap: 3px; padding: 7px 6px; font-size: 10.5px; }
   .nav-btn.active { box-shadow: none; background: transparent; }
